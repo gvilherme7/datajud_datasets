@@ -5,6 +5,7 @@ Este projeto contém um script Python para coletar, processar e salvar dados de 
 ## Sobre o Projeto
 
 O objetivo deste script é criar um dataset estruturado em formato CSV a partir de dados brutos de processos judiciais. O dataset inclui informações como classe processual, assuntos, órgão julgador e a duração do processo em dias (calculada a partir dos movimentos).
+A documentação oficial da API Datajud do CNJ está disponível em https://datajud-wiki.cnj.jus.br/api-publica.
 
 ## Como Utilizar
 
