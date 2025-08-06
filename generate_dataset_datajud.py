@@ -4,6 +4,8 @@ import time
 import os
 from datetime import datetime
 
+# Parâmetros da query da API
+
 TRIBUNAL_SIGLA = "TJSC"
 CIDADE_NOME = "Tubarão"
 CIDADE_IBGE_CODIGO = "4218707" # Utilizar código da cidade/comarca segundo o site do IBGE
@@ -11,12 +13,16 @@ VARA_NOME = "1ª Vara Cível" # Utilizar nome segundo o site da comarca do Tribu
 
 NOME_ARQUIVO_SAIDA = f"dataset_{TRIBUNAL_SIGLA}_{CIDADE_NOME}_{VARA_NOME.replace(' ', '_').replace(',', '')}.csv"
 
+# Parâmetros de configuração da chamada na API
+
 API_KEY = os.getenv("DATAJUD_API_KEY")
 ENDPOINT_URL = f"https://api-publica.datajud.cnj.jus.br/api_publica_{TRIBUNAL_SIGLA.lower()}/_search"
 HEADERS = {
     "Authorization": f"APIKey {API_KEY}",
     "Content-Type": "application/json"
 }
+
+# Função de coleta dos dados na API usando lógica de paginação com o parâmetro search_after
 
 def coletar_processos(query):
 
@@ -66,6 +72,8 @@ def coletar_processos(query):
     print(f"Coleta finalizada. Total de {len(todos_os_processos)} processos brutos encontrados.")
     return todos_os_processos
 
+# Função de processamento dos dados coletados e organização em .csv
+
 def processar_e_salvar_csv(dados_brutos, nome_arquivo):
 
     print("\nIniciando processamento e criação do dataset...")
@@ -112,6 +120,8 @@ def processar_e_salvar_csv(dados_brutos, nome_arquivo):
     df.to_csv(nome_arquivo, index=False, encoding='utf-8-sig')
     print(f"\nDataset salvo com sucesso como '{nome_arquivo}'.")
     print(f"O dataset contém {len(df)} linhas e {len(df.columns)} colunas.")
+
+# Execução
 
 if __name__ == "__main__":
     if not API_KEY:
