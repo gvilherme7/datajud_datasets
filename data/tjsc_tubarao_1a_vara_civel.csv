@@ -1,4 +1,4 @@
-﻿numero_processo,data_ajuizamento,tribunal,grau,nivel_sigilo,classe_codigo,classe_nome,orgao_julgador_codigo,orgao_julgador_nome,municipio_ibge,assuntos_nomes,duracao_processo_dias
+﻿case_number,filing_date,court,degree,secrecy_level,class_code,class_name,court_code,court_name,municipality_ibge,subject_names,case_duration_days
 03043115720188240075,2018-08-22T16:30:58.000Z,TJSC,G1,0,7,Procedimento Comum Cível,8275,1ª Vara Cível da Comarca de Tubarão,4218707,Provas,1278
 50005942520188240075,2018-06-28T15:33:51.000Z,TJSC,G1,0,156,Cumprimento de sentença,8275,1ª Vara Cível da Comarca de Tubarão,4218707,Perda da Propriedade,1319
 03068826920168240075,2016-11-03T14:54:31.000Z,TJSC,G1,0,7,Procedimento Comum Cível,8275,1ª Vara Cível da Comarca de Tubarão,4218707,Duplicata,1867
