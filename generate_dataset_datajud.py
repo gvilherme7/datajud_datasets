@@ -95,15 +95,26 @@ def process_and_save_csv(raw_data: list[dict], file_name: str):
         ]) if subjects else ""
 
         duration_days = None
+        last_motion_date = None
+        last_motion_code = None
+        last_motion_name = None
+
         if motions:
-            motion_dates = [
-                datetime.fromisoformat(motion.get('dataHora').replace('Z', '+00:00'))
-                for motion in motions if motion and motion.get('dataHora')
-            ]
-            if motion_dates:
-                start_date = min(motion_dates)
-                end_date = max(motion_dates)
-                duration_days = (end_date - start_date).days
+            valid_motions = [m for m in motions if m and m.get('dataHora')]
+            if valid_motions:
+                motion_dates = [
+                    datetime.fromisoformat(motion.get('dataHora').replace('Z', '+00:00'))
+                    for motion in motions if motion and motion.get('dataHora')
+                ]
+                if motion_dates:
+                    start_date = min(motion_dates)
+                    end_date = max(motion_dates)
+                    duration_days = (end_date - start_date).days
+
+                    last_mot_dict = max(valid_motions, key=lambda mov: mov['dataHora'])
+                    last_motion_date = last_mot_dict.get('dataHora')
+                    last_motion_code = last_mot_dict.get('codigo')
+                    last_motion_name = last_mot_dict.get('nome')
 
         row = {
             "case_number": case.get('numeroProcesso'),
@@ -117,7 +128,10 @@ def process_and_save_csv(raw_data: list[dict], file_name: str):
             "court_name": court.get('nome'),
             "municipality_ibge": court.get('codigoMunicipioIBGE'),
             "subject_names": subject_names,
-            "case_duration_days": duration_days
+            "case_duration_days": duration_days,
+            "last_motion_date": last_motion_date,
+            "last_motion_code": last_motion_code,
+            "last_motion_name": last_motion_name
         }
         cleaned_dataset.append(row)
 
