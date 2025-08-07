@@ -1,156 +1,154 @@
+from datetime import datetime
+import time
+import re
+
 import requests
 import pandas as pd
-import time
-import os
-from datetime import datetime
+from unidecode import unidecode
 
-# Parâmetros da query da API
-TRIBUNAL_SIGLA = "TJSC"
-CIDADE_NOME = "Braço do Norte"
-CIDADE_IBGE_CODIGO = "4202800" # Utilizar código da cidade/comarca segundo o site do IBGE
-VARA_NOME = "2ª Vara Cível" # Utilizar nome segundo o site da comarca do Tribunal
-
-DATASET_DIR = "datasets"
-os.makedirs(DATASET_DIR, exist_ok=True) # Cria a pasta se ela não existir
-NOME_ARQUIVO_BASE = f"dataset_{TRIBUNAL_SIGLA}_{CIDADE_NOME.replace(' ', '_')}_{VARA_NOME.replace(' ', '_').replace(',', '')}.csv"
-CAMINHO_ARQUIVO_SAIDA = os.path.join(DATASET_DIR, NOME_ARQUIVO_BASE)
+from utils import get_project_root, get_env_var
 
 
-# Parâmetros de configuração da chamada na API
-API_KEY = os.getenv("DATAJUD_API_KEY")
-ENDPOINT_URL = f"https://api-publica.datajud.cnj.jus.br/api_publica_{TRIBUNAL_SIGLA.lower()}/_search"
-HEADERS = {
-    "Authorization": f"APIKey {API_KEY}",
-    "Content-Type": "application/json"
-}
+def collect_cases(query: dict[str, any], court_acronym: str) -> list[dict]:
+    """
+    Collects judicial case data from the DataJud API using the `search_after` pagination strategy.
 
-# Função de coleta dos dados na API usando lógica de paginação com o parâmetro search_after
-def coletar_processos(query):
+    Args:
+        query (dict): Elasticsearch-style query to filter cases.
+        court_acronym (str):
 
-    print("Iniciando coleta de dados da API com o método search_after...")
-    
-    query['sort'] = [
-            {
-                "@timestamp":{
-                    "order": "asc"
-                }
-            }
-            ]
+    Returns:
+        list[dict]: List of all cases returned by the API.
+    """
+    print("Starting data collection from the API using search_after...")
+
+    api_key = get_env_var("DATAJUD_API_KEY")
+    if not api_key:
+        raise ValueError("API Key not found. See .env.example.")
+
+    endpoint = f"https://api-publica.datajud.cnj.jus.br/api_publica_{court_acronym}/_search"
+    headers = {
+        "Authorization": f"APIKey {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    query['sort'] = [{"@timestamp": {"order": "asc"}}]
     query['size'] = 10000
 
-    todos_os_processos = []
+    all_cases = []
     last_sort_value = None
 
     while True:
         if last_sort_value:
             query["search_after"] = last_sort_value
-        
+
         try:
-            response = requests.post(ENDPOINT_URL, headers=HEADERS, json=query, timeout=120)
+            response = requests.post(endpoint, headers=headers, json=query, timeout=120)
             response.raise_for_status()
             response_data = response.json()
         except requests.exceptions.RequestException as e:
-            print(f"ERRO: A requisição falhou. Causa: {e}")
+            print(f"ERROR: Request failed. Cause: {e}")
             break
 
         hits = response_data.get("hits", {}).get("hits", [])
-        
         if not hits:
             break
-            
+
         for hit in hits:
+            all_cases.append(hit['_source'])
 
-            todos_os_processos.append(hit['_source'])
-        
         last_sort_value = hits[-1].get("sort")
+        total_collected = len(all_cases)
+        estimated_total = response_data.get("hits", {}).get("total", {}).get("value", 0)
+        print(f"Collected {total_collected} out of approximately {estimated_total} cases...")
 
-        total_coletados = len(todos_os_processos)
-        total_estimado = response_data.get("hits", {}).get("total", {}).get("value", 0)
-        print(f"Coletados {total_coletados} de aproximadamente {total_estimado} processos...")
-        
         time.sleep(1)
 
-    print(f"Coleta finalizada. Total de {len(todos_os_processos)} processos brutos encontrados.")
-    return todos_os_processos
+    print(f"Data collection completed. Total of {len(all_cases)} raw cases found.")
+    return all_cases
 
-# Função de processamento dos dados coletados e organização em .csv
-def processar_e_salvar_csv(dados_brutos, nome_arquivo):
 
-    print("\nIniciando processamento e criação do dataset...")
-    if not dados_brutos:
-        print("Nenhum dado para processar.")
+def process_and_save_csv(raw_data: list[dict], file_name: str):
+    """
+    Processes raw case data into a structured dataset and saves it as a CSV file.
+
+    Args:
+        raw_data (list): List of raw case data dictionaries.
+        file_name (str): Name of the CSV file to be saved (without path).
+    """
+    print("\nStarting data processing and dataset creation...")
+
+    if len(raw_data) < 1:
+        print("No data to process.")
         return
 
-    dataset_limpo = []
-    for processo in dados_brutos:
-        classe = processo.get('classe', {})
-        orgao = processo.get('orgaoJulgador', {})
-        assuntos = processo.get('assuntos', [])
-        movimentos = processo.get('movimentos', [])
+    cleaned_dataset = []
+    for case in raw_data:
+        class_info = case.get('classe', {})
+        court = case.get('orgaoJulgador', {})
+        subjects = case.get('assuntos', [])
+        motions = case.get('movimentos', [])
 
-        nomes_assuntos = "|".join([
-            assunto.get('nome', '') for assunto in assuntos if isinstance(assunto, dict)
-        ]) if assuntos else ""
-        
-        duracao_dias = None
-        ultimo_movimento_data = None
-        ultimo_movimento_codigo = None
-        ultimo_movimento_nome = None
+        subject_names = "|".join([
+            subject.get('nome', '')
+            for subject in subjects if isinstance(subject, dict)
+        ]) if subjects else ""
 
-        if movimentos:
-            movimentos_validos = [mov for mov in movimentos if mov and mov.get('dataHora')]
-            if movimentos_validos:
-                datas_movimentos = [datetime.fromisoformat(mov['dataHora'].replace('Z', '+00:00')) for mov in movimentos_validos]
-                data_final = max(datas_movimentos)
-                data_inicial = min(datas_movimentos)
-                duracao_dias = (data_final - data_inicial).days
+        duration_days = None
+        if motions:
+            motion_dates = [
+                datetime.fromisoformat(motion.get('dataHora').replace('Z', '+00:00'))
+                for motion in motions if motion and motion.get('dataHora')
+            ]
+            if motion_dates:
+                start_date = min(motion_dates)
+                end_date = max(motion_dates)
+                duration_days = (end_date - start_date).days
 
-                ultimo_mov_dict = max(movimentos_validos, key=lambda mov: mov['dataHora'])
-                ultimo_movimento_data = ultimo_mov_dict.get('dataHora')
-                ultimo_movimento_codigo = ultimo_mov_dict.get('codigo')
-                ultimo_movimento_nome = ultimo_mov_dict.get('nome')
-
-        linha = {
-            "numero_processo": processo.get('numeroProcesso'),
-            "data_ajuizamento": processo.get('dataAjuizamento'),
-            "tribunal": processo.get('tribunal'),
-            "grau": processo.get('grau'),
-            "nivel_sigilo": processo.get('nivelSigilo'),
-            "classe_codigo": classe.get('codigo'),
-            "classe_nome": classe.get('nome'),
-            "orgao_julgador_codigo": orgao.get('codigo'),
-            "orgao_julgador_nome": orgao.get('nome'),
-            "municipio_ibge": orgao.get('codigoMunicipioIBGE'),
-            "assuntos_nomes": nomes_assuntos,
-            "duracao_processo_dias": duracao_dias,
-            "ultimo_movimento_data": ultimo_movimento_data,
-            "ultimo_movimento_codigo": ultimo_movimento_codigo,
-            "ultimo_movimento_descricao": ultimo_movimento_nome
+        row = {
+            "case_number": case.get('numeroProcesso'),
+            "filing_date": case.get('dataAjuizamento'),
+            "court": case.get('tribunal'),
+            "degree": case.get('grau'),
+            "secrecy_level": case.get('nivelSigilo'),
+            "class_code": class_info.get('codigo'),
+            "class_name": class_info.get('nome'),
+            "court_code": court.get('codigo'),
+            "court_name": court.get('nome'),
+            "municipality_ibge": court.get('codigoMunicipioIBGE'),
+            "subject_names": subject_names,
+            "case_duration_days": duration_days
         }
-        dataset_limpo.append(linha)
+        cleaned_dataset.append(row)
 
-    df = pd.DataFrame(dataset_limpo)
-    df.to_csv(nome_arquivo, index=False, encoding='utf-8-sig')
-    print(f"\nDataset salvo com sucesso como '{nome_arquivo}'.")
-    print(f"O dataset contém {len(df)} linhas e {len(df.columns)} colunas.")
+    df = pd.DataFrame(cleaned_dataset)
+    df.to_csv(f"{get_project_root()}/data/{file_name}", index=False, encoding='utf-8-sig')
 
-# Execução
+    print(f"\nDataset successfully saved as '{file_name}'.")
+    print(f"The dataset contains {len(df)} rows and {len(df.columns)} columns.")
+
+
 if __name__ == "__main__":
-    if not API_KEY:
-        print("ERRO CRÍTICO: A chave da API não foi encontrada.")
-    else:
-        query_vara_especifica = {
-            "query": {
-                "bool": {
-                    "must": [
-                        {"match": {"orgaoJulgador.codigoMunicipioIBGE": CIDADE_IBGE_CODIGO}},
-                        {"match_phrase": {"orgaoJulgador.nome": VARA_NOME}} 
-                    ]
-                }
+    COURT_ACRONYM = "tjsc"
+    CITY_NAME = "tubarao"
+    CITY_IBGE_CODE = "4218707"
+    COURT_NAME = "1ª Vara Cível"
+
+    cleaned_court_name = (
+        re.sub(r'[^a-zA-Z0-9\s]', '', unidecode(COURT_NAME)).replace(" ", "_").lower()
+    )
+    file_name = f"{COURT_ACRONYM}_{CITY_NAME}_{cleaned_court_name}.csv"
+
+    specific_court_query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"match": {"orgaoJulgador.codigoMunicipioIBGE": CITY_IBGE_CODE}},
+                    {"match_phrase": {"orgaoJulgador.nome": COURT_NAME}}
+                ]
             }
         }
-        
-        dados_coletados = coletar_processos(query_vara_especifica)
-        
-        if dados_coletados:
-            processar_e_salvar_csv(dados_coletados, CAMINHO_ARQUIVO_SAIDA)
+    }
+
+    collected_data = collect_cases(specific_court_query, COURT_ACRONYM)
+    process_and_save_csv(collected_data, file_name) 
