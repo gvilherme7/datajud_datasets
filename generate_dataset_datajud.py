@@ -151,4 +151,4 @@ if __name__ == "__main__":
     }
 
     collected_data = collect_cases(specific_court_query, COURT_ACRONYM)
-    process_and_save_csv(collected_data, file_name)
+    process_and_save_csv(collected_data, file_name) 
